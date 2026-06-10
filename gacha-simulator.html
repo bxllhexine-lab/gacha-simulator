@@ -126,6 +126,104 @@
   .rate-total.invalid {
     color: #dc2626;
   }
+
+  .item-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .item-form input,
+  .item-form select {
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 1rem;
+  }
+
+  .item-form input {
+    flex: 1;
+    min-width: 160px;
+  }
+
+  .item-form button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+
+  .item-form button:hover {
+    background: var(--primary-dark);
+  }
+
+  .form-error {
+    color: #dc2626;
+    font-size: 0.85rem;
+    min-height: 1.2em;
+    margin-bottom: 8px;
+  }
+
+  .item-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .item-table th,
+  .item-table td {
+    text-align: left;
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+  }
+
+  .rarity-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .rarity-badge.SSR {
+    background: #d4af37;
+  }
+
+  .rarity-badge.SR {
+    background: #9333ea;
+  }
+
+  .rarity-badge.R {
+    background: #2563eb;
+  }
+
+  .rarity-badge.N {
+    background: #6b7280;
+  }
+
+  .item-table button {
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+
+  .item-table button:hover {
+    background: var(--bg);
+  }
+
+  .item-pool-summary {
+    margin-top: 12px;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
 </style>
 </head>
 <body>
@@ -173,7 +271,33 @@
 
   <section id="item-pool">
     <h2>คลังไอเทม (Item Pool)</h2>
-    <div class="placeholder"><!-- TODO: render item pool UI --></div>
+    <div class="item-form">
+      <input type="text" id="item-name-input" placeholder="ชื่อ item">
+      <select id="item-rarity-input">
+        <option value="">เลือก Rarity</option>
+        <option value="SSR">SSR</option>
+        <option value="SR">SR</option>
+        <option value="R">R</option>
+        <option value="N">N</option>
+      </select>
+      <button id="add-item-btn">+ Add Item</button>
+    </div>
+    <div id="item-form-error" class="form-error"></div>
+    <table class="item-table">
+      <thead>
+        <tr>
+          <th>ลำดับ</th>
+          <th>ชื่อ item</th>
+          <th>Rarity</th>
+          <th>แก้ไข</th>
+          <th>ลบ</th>
+        </tr>
+      </thead>
+      <tbody id="item-table-body"></tbody>
+    </table>
+    <div id="item-empty" class="placeholder"></div>
+    <div id="item-pool-summary" class="item-pool-summary"></div>
+    <div id="item-pool-validation" class="rate-total"></div>
   </section>
 
   <section id="single-simulation">
@@ -195,7 +319,17 @@
 <script>
   const state = {
     rates: { SSR: 1, SR: 9, R: 30, N: 60 },
-    items: [],
+    items: [
+      { name: "Legendary Sword", rarity: "SSR" },
+      { name: "Phoenix", rarity: "SSR" },
+      { name: "Magic Staff", rarity: "SR" },
+      { name: "Dragon Shield", rarity: "SR" },
+      { name: "Iron Bow", rarity: "R" },
+      { name: "Forest Cloak", rarity: "R" },
+      { name: "HP Potion", rarity: "N" },
+      { name: "Rope", rarity: "N" },
+      { name: "Torch", rarity: "N" }
+    ],
     simResult: null,
     povResult: null,
     history: []
@@ -228,6 +362,7 @@
     const rarity = input.dataset.rarity;
     state.rates[rarity] = parseFloat(input.value);
     renderRateSettings();
+    renderItemPool();
   }
 
   // render ส่วน rate-settings: total และสถานะ valid/invalid
@@ -249,20 +384,136 @@
     }
   }
 
-  // TODO: ตรวจสอบว่า state.items มีข้อมูลครบทุก rarity และไม่มีค่าว่าง/ผิดรูปแบบ
+  // ตรวจสอบว่าทุก rarity ที่มี rate > 0 ต้องมี item อย่างน้อย 1 ชิ้นใน pool
   function validateItemPool() {
+    const missing = ["SSR", "SR", "R", "N"].filter((rarity) => {
+      const rate = state.rates[rarity];
+      const hasItems = state.items.some((item) => item.rarity === rarity);
+      return typeof rate === "number" && rate > 0 && !hasItems;
+    });
+
+    if (missing.length > 0) {
+      return { valid: false, message: `Rarity ที่มี rate > 0 แต่ยังไม่มี item: ${missing.join(", ")}` };
+    }
+
+    return { valid: true, message: "Item pool ครบถ้วน" };
   }
 
-  // TODO: เพิ่มไอเทมใหม่เข้า state.items
+  // เพิ่มไอเทมใหม่เข้า state.items หลังตรวจสอบความถูกต้องของ input
   function addItem() {
+    const nameInput = document.getElementById("item-name-input");
+    const rarityInput = document.getElementById("item-rarity-input");
+    const errorEl = document.getElementById("item-form-error");
+
+    const name = nameInput.value.trim();
+    const rarity = rarityInput.value;
+
+    if (!name) {
+      errorEl.textContent = "กรุณากรอกชื่อ item";
+      return;
+    }
+    if (!rarity) {
+      errorEl.textContent = "กรุณาเลือก Rarity";
+      return;
+    }
+
+    state.items.push({ name, rarity });
+    errorEl.textContent = "";
+    nameInput.value = "";
+    rarityInput.value = "";
+    renderItemPool();
   }
 
-  // TODO: แก้ไขไอเทมที่มีอยู่ใน state.items
-  function editItem() {
+  // แก้ไขไอเทมที่มีอยู่ใน state.items โดยใช้ prompt()
+  function editItem(index) {
+    const item = state.items[index];
+
+    const newName = prompt("ชื่อ item ใหม่:", item.name);
+    if (newName === null) return;
+    const trimmedName = newName.trim();
+    if (!trimmedName) {
+      alert("ชื่อ item ห้ามว่าง");
+      return;
+    }
+
+    const newRarity = prompt("Rarity ใหม่ (SSR/SR/R/N):", item.rarity);
+    if (newRarity === null) return;
+    const upperRarity = newRarity.trim().toUpperCase();
+    if (!["SSR", "SR", "R", "N"].includes(upperRarity)) {
+      alert("Rarity ต้องเป็น SSR, SR, R หรือ N เท่านั้น");
+      return;
+    }
+
+    item.name = trimmedName;
+    item.rarity = upperRarity;
+    renderItemPool();
   }
 
-  // TODO: ลบไอเทมออกจาก state.items
-  function deleteItem() {
+  // ลบไอเทมออกจาก state.items แล้ว re-render
+  function deleteItem(index) {
+    state.items.splice(index, 1);
+    renderItemPool();
+  }
+
+  // render ส่วน item-pool: ตาราง, summary, validation
+  function renderItemPool() {
+    const tbody = document.getElementById("item-table-body");
+    const emptyEl = document.getElementById("item-empty");
+    const summaryEl = document.getElementById("item-pool-summary");
+    const validationEl = document.getElementById("item-pool-validation");
+
+    tbody.innerHTML = "";
+
+    if (state.items.length === 0) {
+      emptyEl.textContent = "ยังไม่มี item เพิ่ม item ด้านบนก่อนเริ่ม simulation";
+    } else {
+      emptyEl.textContent = "";
+      state.items.forEach((item, index) => {
+        const tr = document.createElement("tr");
+
+        const idxTd = document.createElement("td");
+        idxTd.textContent = index + 1;
+
+        const nameTd = document.createElement("td");
+        nameTd.textContent = item.name;
+
+        const rarityTd = document.createElement("td");
+        const badge = document.createElement("span");
+        badge.className = `rarity-badge ${item.rarity}`;
+        badge.textContent = item.rarity;
+        rarityTd.appendChild(badge);
+
+        const editTd = document.createElement("td");
+        const editBtn = document.createElement("button");
+        editBtn.textContent = "แก้ไข";
+        editBtn.addEventListener("click", () => editItem(index));
+        editTd.appendChild(editBtn);
+
+        const deleteTd = document.createElement("td");
+        const deleteBtn = document.createElement("button");
+        deleteBtn.textContent = "ลบ";
+        deleteBtn.addEventListener("click", () => deleteItem(index));
+        deleteTd.appendChild(deleteBtn);
+
+        tr.append(idxTd, nameTd, rarityTd, editTd, deleteTd);
+        tbody.appendChild(tr);
+      });
+    }
+
+    const counts = { SSR: 0, SR: 0, R: 0, N: 0 };
+    state.items.forEach((item) => {
+      counts[item.rarity] = (counts[item.rarity] || 0) + 1;
+    });
+    summaryEl.textContent = `SSR: ${counts.SSR} | SR: ${counts.SR} | R: ${counts.R} | N: ${counts.N}`;
+
+    const result = validateItemPool();
+    if (result.valid) {
+      validationEl.textContent = `✓ ${result.message}`;
+      validationEl.className = "rate-total valid";
+    } else {
+      validationEl.textContent = `✗ ${result.message}`;
+      validationEl.className = "rate-total invalid";
+    }
   }
 
   // TODO: สุ่มผลลัพธ์ 1 ครั้งโดยใช้ Math.random() ตาม state.rates และ state.items
@@ -288,11 +539,14 @@
   // TODO: render ทุก section ตามค่าปัจจุบันใน state
   function renderAll() {
     renderRateSettings();
+    renderItemPool();
   }
 
   document.querySelectorAll(".rate-input-wrap input").forEach((input) => {
     input.addEventListener("input", handleRateInputChange);
   });
+
+  document.getElementById("add-item-btn").addEventListener("click", addItem);
 
   renderAll();
 </script>

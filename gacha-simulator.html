@@ -72,6 +72,60 @@
     font-style: italic;
     font-size: 0.9rem;
   }
+
+  .rate-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .rate-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .rate-field label {
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+
+  .rate-input-wrap {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .rate-input-wrap input {
+    width: 80px;
+    border: none;
+    padding: 8px;
+    font-size: 1rem;
+    outline: none;
+  }
+
+  .rate-input-wrap .unit {
+    padding: 0 10px;
+    background: var(--bg);
+    color: var(--text-muted);
+    border-left: 1px solid var(--border);
+  }
+
+  .rate-total {
+    margin-top: 12px;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+
+  .rate-total.valid {
+    color: #16a34a;
+  }
+
+  .rate-total.invalid {
+    color: #dc2626;
+  }
 </style>
 </head>
 <body>
@@ -84,7 +138,37 @@
 <main>
   <section id="rate-settings">
     <h2>ตั้งค่าอัตราดรอป (Rate Settings)</h2>
-    <div class="placeholder"><!-- TODO: render rate settings UI --></div>
+    <div class="rate-grid">
+      <div class="rate-field">
+        <label for="rate-ssr">SSR</label>
+        <div class="rate-input-wrap">
+          <input type="number" id="rate-ssr" data-rarity="SSR" value="1">
+          <span class="unit">%</span>
+        </div>
+      </div>
+      <div class="rate-field">
+        <label for="rate-sr">SR</label>
+        <div class="rate-input-wrap">
+          <input type="number" id="rate-sr" data-rarity="SR" value="9">
+          <span class="unit">%</span>
+        </div>
+      </div>
+      <div class="rate-field">
+        <label for="rate-r">R</label>
+        <div class="rate-input-wrap">
+          <input type="number" id="rate-r" data-rarity="R" value="30">
+          <span class="unit">%</span>
+        </div>
+      </div>
+      <div class="rate-field">
+        <label for="rate-n">N</label>
+        <div class="rate-input-wrap">
+          <input type="number" id="rate-n" data-rarity="N" value="60">
+          <span class="unit">%</span>
+        </div>
+      </div>
+    </div>
+    <div id="rate-total" class="rate-total"></div>
   </section>
 
   <section id="item-pool">
@@ -117,8 +201,52 @@
     history: []
   };
 
-  // TODO: ตรวจสอบว่าผลรวมของ state.rates เท่ากับ 100 และค่าทุกตัวไม่ติดลบ
+  // ตรวจสอบว่าผลรวมของ state.rates เท่ากับ 100 และค่าทุกตัวไม่ติดลบและเป็นตัวเลข
   function validateRates() {
+    const keys = ["SSR", "SR", "R", "N"];
+    for (const key of keys) {
+      const value = state.rates[key];
+      if (typeof value !== "number" || isNaN(value)) {
+        return { valid: false, message: `ค่า ${key} ไม่ใช่ตัวเลข` };
+      }
+      if (value < 0) {
+        return { valid: false, message: `ค่า ${key} ติดลบไม่ได้` };
+      }
+    }
+
+    const total = keys.reduce((sum, key) => sum + state.rates[key], 0);
+    if (total !== 100) {
+      return { valid: false, message: `ผลรวมต้องเท่ากับ 100 (ตอนนี้รวมได้ ${total})` };
+    }
+
+    return { valid: true, message: "ผลรวม 100% ถูกต้อง" };
+  }
+
+  // อัปเดต state.rates เมื่อ user แก้ไข input แล้ว render ใหม่
+  function handleRateInputChange(event) {
+    const input = event.target;
+    const rarity = input.dataset.rarity;
+    state.rates[rarity] = parseFloat(input.value);
+    renderRateSettings();
+  }
+
+  // render ส่วน rate-settings: total และสถานะ valid/invalid
+  function renderRateSettings() {
+    const total = ["SSR", "SR", "R", "N"].reduce((sum, key) => {
+      const value = state.rates[key];
+      return sum + (typeof value === "number" && !isNaN(value) ? value : 0);
+    }, 0);
+
+    const result = validateRates();
+    const totalEl = document.getElementById("rate-total");
+
+    if (result.valid) {
+      totalEl.textContent = `✓ รวม ${total}%`;
+      totalEl.className = "rate-total valid";
+    } else {
+      totalEl.textContent = `✗ รวม ${total}% — ${result.message}`;
+      totalEl.className = "rate-total invalid";
+    }
   }
 
   // TODO: ตรวจสอบว่า state.items มีข้อมูลครบทุก rarity และไม่มีค่าว่าง/ผิดรูปแบบ
@@ -159,7 +287,12 @@
 
   // TODO: render ทุก section ตามค่าปัจจุบันใน state
   function renderAll() {
+    renderRateSettings();
   }
+
+  document.querySelectorAll(".rate-input-wrap input").forEach((input) => {
+    input.addEventListener("input", handleRateInputChange);
+  });
 
   renderAll();
 </script>

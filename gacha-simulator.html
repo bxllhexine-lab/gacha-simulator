@@ -336,6 +336,60 @@
   .export-btn:hover {
     background: var(--primary-dark);
   }
+
+  .pov-toggle {
+    margin: 8px 0;
+    font-size: 0.95rem;
+  }
+
+  .pov-toggle input {
+    margin-right: 6px;
+  }
+
+  .pov-free-roll-fields {
+    align-items: flex-end;
+  }
+
+  .free-roll-text label {
+    white-space: nowrap;
+  }
+
+  .free-roll-text input {
+    width: 80px;
+  }
+
+  .hidden {
+    display: none;
+  }
+
+  .pov-insight {
+    margin-top: 16px;
+    padding: 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  #run-pov-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+
+  #run-pov-btn:hover {
+    background: var(--primary-dark);
+  }
+
+  #run-pov-btn:disabled {
+    background: var(--text-muted);
+    cursor: not-allowed;
+  }
 </style>
 </head>
 <body>
@@ -431,7 +485,45 @@
 
   <section id="player-pov">
     <h2>มุมมองผู้เล่น (Player POV)</h2>
-    <div class="placeholder"><!-- TODO: render player POV UI --></div>
+    <div class="sim-form">
+      <div class="rate-field">
+        <label for="pov-budget">งบประมาณ (บาท)</label>
+        <input type="number" id="pov-budget" min="0" step="1" value="3000">
+      </div>
+      <div class="rate-field">
+        <label for="pov-price">ราคาต่อ roll (บาท)</label>
+        <input type="number" id="pov-price" min="0" step="1" value="30">
+      </div>
+      <div class="rate-field">
+        <label for="pov-sim-count">จำนวน simulation rounds</label>
+        <input type="number" id="pov-sim-count" min="1" max="10000" step="1" value="1000">
+      </div>
+    </div>
+    <div class="pov-toggle">
+      <label>
+        <input type="checkbox" id="pov-free-roll-toggle">
+        เปิดใช้ Free Roll Rule
+      </label>
+    </div>
+    <div id="pov-free-roll-fields" class="sim-form pov-free-roll-fields hidden">
+      <div class="rate-field free-roll-text">
+        <label>ครบ</label>
+        <input type="number" id="pov-free-x" min="1" step="1" value="10">
+      </div>
+      <div class="rate-field free-roll-text">
+        <label>paid rolls → ได้ฟรี</label>
+        <input type="number" id="pov-free-y" min="0" step="1" value="1">
+      </div>
+      <div class="rate-field free-roll-text">
+        <label>rolls</label>
+      </div>
+    </div>
+    <div id="pov-form-error" class="form-error"></div>
+    <div id="pov-rolls-preview" class="rate-total"></div>
+    <div class="sim-form">
+      <button id="run-pov-btn">Run Player POV Simulation</button>
+    </div>
+    <div id="pov-result"></div>
   </section>
 
   <section id="history">
@@ -777,8 +869,136 @@
     renderSimResult();
   }
 
-  // TODO: รันการจำลองแบบ Monte Carlo จากมุมมองผู้เล่น เก็บผลลัพธ์ลง state.povResult
-  function runMonteCarlo() {
+  // คำนวณ paidRolls / freeRolls / totalRolls จาก input ปัจจุบันของ player-pov
+  function calcPovRolls() {
+    const budget = parseFloat(document.getElementById("pov-budget").value);
+    const price = parseFloat(document.getElementById("pov-price").value);
+    const freeRollEnabled = document.getElementById("pov-free-roll-toggle").checked;
+    const freeX = parseInt(document.getElementById("pov-free-x").value, 10);
+    const freeY = parseInt(document.getElementById("pov-free-y").value, 10);
+
+    const paidRolls = (!isNaN(budget) && !isNaN(price) && price > 0)
+      ? Math.floor(budget / price)
+      : 0;
+
+    let freeRolls = 0;
+    if (freeRollEnabled && !isNaN(freeX) && freeX > 0 && !isNaN(freeY) && freeY >= 0) {
+      freeRolls = Math.floor(paidRolls / freeX) * freeY;
+    }
+
+    const totalRolls = paidRolls + freeRolls;
+
+    return { budget, price, freeRollEnabled, freeX, freeY, paidRolls, freeRolls, totalRolls };
+  }
+
+  // ตรวจสอบ input ของ player-pov
+  function validatePovInputs() {
+    const { budget, price } = calcPovRolls();
+    const simCount = parseInt(document.getElementById("pov-sim-count").value, 10);
+
+    if (isNaN(budget) || budget <= 0) {
+      return { valid: false, message: "งบประมาณต้องมากกว่า 0", field: "budget" };
+    }
+    if (isNaN(price) || price <= 0) {
+      return { valid: false, message: "ราคาต่อ roll ต้องมากกว่า 0", field: "price" };
+    }
+    if (price > budget) {
+      return { valid: false, message: "ราคาต่อ roll มากกว่างบประมาณ", field: "price" };
+    }
+    if (isNaN(simCount) || simCount <= 0) {
+      return { valid: false, message: "จำนวน simulation rounds ต้องมากกว่า 0", field: "simCount" };
+    }
+
+    return { valid: true, message: "" };
+  }
+
+  // render preview ของ paid/free/total rolls แบบ live พร้อม highlight ค่าที่ผิด
+  function renderPovRollsPreview() {
+    const errorEl = document.getElementById("pov-form-error");
+    const previewEl = document.getElementById("pov-rolls-preview");
+    const budgetInput = document.getElementById("pov-budget");
+    const priceInput = document.getElementById("pov-price");
+    const simCountInput = document.getElementById("pov-sim-count");
+
+    let simCount = parseInt(simCountInput.value, 10);
+    if (!isNaN(simCount) && simCount > 10000) {
+      simCount = 10000;
+      simCountInput.value = 10000;
+    }
+
+    const { paidRolls, freeRolls, totalRolls } = calcPovRolls();
+    const result = validatePovInputs();
+
+    budgetInput.classList.toggle("input-error", !result.valid && result.field === "budget");
+    priceInput.classList.toggle("input-error", !result.valid && result.field === "price");
+    simCountInput.classList.toggle("input-error", !result.valid && result.field === "simCount");
+
+    previewEl.textContent = `Paid Rolls: ${paidRolls} | Free Rolls: ${freeRolls} | Total Rolls: ${totalRolls}`;
+    previewEl.className = result.valid ? "rate-total valid" : "rate-total invalid";
+    errorEl.textContent = result.valid ? "" : result.message;
+
+    return result;
+  }
+
+  // รันการจำลองแบบ Monte Carlo จากมุมมองผู้เล่น เก็บผลลัพธ์ลง state.povResult
+  function runMonteCarlo(budget, price, simCount, freeRollRule) {
+    const errorEl = document.getElementById("pov-form-error");
+
+    const ratesCheck = validateRates();
+    if (!ratesCheck.valid) {
+      errorEl.textContent = `ตั้งค่า Rate ไม่ถูกต้อง: ${ratesCheck.message}`;
+      return;
+    }
+
+    const itemsCheck = validateItemPool();
+    if (!itemsCheck.valid) {
+      errorEl.textContent = `Item Pool ไม่ถูกต้อง: ${itemsCheck.message}`;
+      return;
+    }
+
+    const inputCheck = renderPovRollsPreview();
+    if (!inputCheck.valid) {
+      return;
+    }
+
+    const { paidRolls, freeRolls, totalRolls } = calcPovRolls();
+
+    const ssrCounts = [];
+    for (let i = 0; i < simCount; i++) {
+      let ssr = 0;
+      for (let j = 0; j < totalRolls; j++) {
+        if (rollOnce().rarity === "SSR") {
+          ssr++;
+        }
+      }
+      ssrCounts.push(ssr);
+    }
+
+    const atLeastOneCount = ssrCounts.filter((c) => c >= 1).length;
+    const zeroCount = ssrCounts.filter((c) => c === 0).length;
+
+    const chanceAtLeastOneSSR = (atLeastOneCount / simCount) * 100;
+    const chanceZeroSSR = (zeroCount / simCount) * 100;
+    const avgSSR = ssrCounts.reduce((sum, c) => sum + c, 0) / simCount;
+    const bestSSR = Math.max(...ssrCounts);
+    const worstSSR = Math.min(...ssrCounts);
+
+    state.povResult = {
+      budget,
+      price,
+      freeRollRule,
+      paidRolls,
+      freeRolls,
+      totalRolls,
+      simCount,
+      chanceAtLeastOneSSR,
+      chanceZeroSSR,
+      avgSSR,
+      bestSSR,
+      worstSSR
+    };
+
+    renderPovResult();
   }
 
   // export ผลการสุ่มล่าสุดเป็น CSV ผ่าน Blob + URL.createObjectURL
@@ -807,8 +1027,34 @@
     URL.revokeObjectURL(url);
   }
 
-  // TODO: export ผลลัพธ์ POV เป็น CSV ผ่าน Blob + URL.createObjectURL
+  // export สรุปผลลัพธ์ player-pov เป็น CSV ผ่าน Blob + URL.createObjectURL
   function exportPOVCSV() {
+    if (!state.povResult) return;
+
+    const {
+      budget, price, paidRolls, freeRolls, totalRolls, simCount,
+      chanceAtLeastOneSSR, chanceZeroSSR, avgSSR, bestSSR, worstSSR
+    } = state.povResult;
+
+    const rows = [
+      ["Budget", "Price/Roll", "Paid Rolls", "Free Rolls", "Total Rolls", "Sim Count", "Chance>=1SSR%", "Chance0SSR%", "Avg SSR", "Best", "Worst"],
+      [budget, price, paidRolls, freeRolls, totalRolls, simCount, chanceAtLeastOneSSR.toFixed(2), chanceZeroSSR.toFixed(2), avgSSR.toFixed(2), bestSSR, worstSSR]
+    ];
+
+    const csv = rows
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `gacha-pov-${Date.now()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   }
 
   // render ส่วน single-simulation: cards, ตารางสรุป, รายการ item
@@ -880,11 +1126,77 @@
     container.appendChild(exportBtn);
   }
 
+  // render ส่วน player-pov: cards, insight text
+  function renderPovResult() {
+    const container = document.getElementById("pov-result");
+
+    if (!state.povResult) {
+      container.innerHTML = '<div class="placeholder">กรอกข้อมูลแล้วกด Run Player POV Simulation</div>';
+      return;
+    }
+
+    const {
+      budget, price, paidRolls, freeRolls, totalRolls, simCount,
+      chanceAtLeastOneSSR, chanceZeroSSR, avgSSR, bestSSR, worstSSR
+    } = state.povResult;
+
+    container.innerHTML = "";
+
+    const rollsCardsDiv = document.createElement("div");
+    rollsCardsDiv.className = "sim-cards";
+    [
+      { label: "Paid Rolls", value: paidRolls },
+      { label: "Free Rolls", value: freeRolls },
+      { label: "Total Rolls", value: totalRolls },
+      { label: "Sim Rounds", value: simCount }
+    ].forEach(({ label, value }) => {
+      const card = document.createElement("div");
+      card.className = "sim-card";
+      card.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>`;
+      rollsCardsDiv.appendChild(card);
+    });
+    container.appendChild(rollsCardsDiv);
+
+    const statCardsDiv = document.createElement("div");
+    statCardsDiv.className = "sim-cards";
+    [
+      { label: "โอกาสได้ SSR ≥1", value: `${chanceAtLeastOneSSR.toFixed(2)}%` },
+      { label: "โอกาสไม่ได้ SSR เลย", value: `${chanceZeroSSR.toFixed(2)}%` },
+      { label: "Avg SSR", value: avgSSR.toFixed(2) },
+      { label: "Best", value: bestSSR },
+      { label: "Worst", value: worstSSR }
+    ].forEach(({ label, value }) => {
+      const card = document.createElement("div");
+      card.className = "sim-card";
+      card.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>`;
+      statCardsDiv.appendChild(card);
+    });
+    container.appendChild(statCardsDiv);
+
+    const insightDiv = document.createElement("div");
+    insightDiv.className = "pov-insight";
+    insightDiv.textContent =
+      `งบ ${budget.toLocaleString()} บาท ราคา ${price.toLocaleString()} บาท/roll ` +
+      `ได้ ${paidRolls.toLocaleString()} paid rolls + ${freeRolls.toLocaleString()} free rolls = ${totalRolls.toLocaleString()} rolls รวม ` +
+      `จาก ${simCount.toLocaleString()} simulation พบว่ามีโอกาสได้ SSR อย่างน้อย 1 ตัวประมาณ ${chanceAtLeastOneSSR.toFixed(2)}% ` +
+      `และมีโอกาส ${chanceZeroSSR.toFixed(2)}% ที่จะไม่ได้ SSR เลยตลอดงบนี้`;
+    container.appendChild(insightDiv);
+
+    const exportBtn = document.createElement("button");
+    exportBtn.id = "export-pov-csv-btn";
+    exportBtn.className = "export-btn";
+    exportBtn.textContent = "Export Player POV Summary CSV";
+    exportBtn.addEventListener("click", exportPOVCSV);
+    container.appendChild(exportBtn);
+  }
+
   // TODO: render ทุก section ตามค่าปัจจุบันใน state
   function renderAll() {
     renderRateSettings();
     renderItemPool();
     renderSimResult();
+    renderPovRollsPreview();
+    renderPovResult();
   }
 
   document.querySelectorAll(".rate-input-wrap input").forEach((input) => {
@@ -901,6 +1213,30 @@
 
   document.getElementById("sim-roll-count").addEventListener("input", renderSimInputValidation);
   document.getElementById("sim-price").addEventListener("input", renderSimInputValidation);
+
+  ["pov-budget", "pov-price", "pov-sim-count", "pov-free-x", "pov-free-y"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", renderPovRollsPreview);
+  });
+
+  document.getElementById("pov-free-roll-toggle").addEventListener("change", (event) => {
+    document.getElementById("pov-free-roll-fields").classList.toggle("hidden", !event.target.checked);
+    renderPovRollsPreview();
+  });
+
+  document.getElementById("run-pov-btn").addEventListener("click", () => {
+    const btn = document.getElementById("run-pov-btn");
+    btn.disabled = true;
+    btn.textContent = "กำลังคำนวณ...";
+
+    setTimeout(() => {
+      const { budget, price, freeRollEnabled, freeX, freeY } = calcPovRolls();
+      const simCount = parseInt(document.getElementById("pov-sim-count").value, 10);
+      runMonteCarlo(budget, price, simCount, { enabled: freeRollEnabled, x: freeX, y: freeY });
+
+      btn.disabled = false;
+      btn.textContent = "Run Player POV Simulation";
+    }, 50);
+  });
 
   renderAll();
 </script>

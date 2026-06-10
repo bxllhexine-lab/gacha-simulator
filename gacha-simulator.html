@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gacha Simulator</title>
+<style>
+  :root {
+    --primary: #4f46e5;
+    --primary-dark: #3730a3;
+    --bg: #f5f6fa;
+    --surface: #ffffff;
+    --text: #1f2330;
+    --text-muted: #6b7280;
+    --border: #e2e4ea;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  header {
+    background: var(--primary);
+    color: #fff;
+    padding: 24px 16px;
+    text-align: center;
+  }
+
+  header h1 {
+    margin: 0 0 8px 0;
+    font-size: 1.8rem;
+  }
+
+  header p {
+    margin: 0;
+    color: #e0e7ff;
+    font-size: 0.95rem;
+  }
+
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  section h2 {
+    margin-top: 0;
+    font-size: 1.2rem;
+    color: var(--primary-dark);
+  }
+
+  .placeholder {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.9rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Gacha Simulator</h1>
+  <p>จำลองการสุ่มกาชา ตั้งค่าอัตราดรอป สร้างไอเทม และดูสถิติผลลัพธ์</p>
+</header>
+
+<main>
+  <section id="rate-settings">
+    <h2>ตั้งค่าอัตราดรอป (Rate Settings)</h2>
+    <div class="placeholder"><!-- TODO: render rate settings UI --></div>
+  </section>
+
+  <section id="item-pool">
+    <h2>คลังไอเทม (Item Pool)</h2>
+    <div class="placeholder"><!-- TODO: render item pool UI --></div>
+  </section>
+
+  <section id="single-simulation">
+    <h2>สุ่มเดี่ยว (Single Simulation)</h2>
+    <div class="placeholder"><!-- TODO: render single simulation UI --></div>
+  </section>
+
+  <section id="player-pov">
+    <h2>มุมมองผู้เล่น (Player POV)</h2>
+    <div class="placeholder"><!-- TODO: render player POV UI --></div>
+  </section>
+
+  <section id="history">
+    <h2>ประวัติการสุ่ม (History)</h2>
+    <div class="placeholder"><!-- TODO: render history UI --></div>
+  </section>
+</main>
+
+<script>
+  const state = {
+    rates: { SSR: 1, SR: 9, R: 30, N: 60 },
+    items: [],
+    simResult: null,
+    povResult: null,
+    history: []
+  };
+
+  // TODO: ตรวจสอบว่าผลรวมของ state.rates เท่ากับ 100 และค่าทุกตัวไม่ติดลบ
+  function validateRates() {
+  }
+
+  // TODO: ตรวจสอบว่า state.items มีข้อมูลครบทุก rarity และไม่มีค่าว่าง/ผิดรูปแบบ
+  function validateItemPool() {
+  }
+
+  // TODO: เพิ่มไอเทมใหม่เข้า state.items
+  function addItem() {
+  }
+
+  // TODO: แก้ไขไอเทมที่มีอยู่ใน state.items
+  function editItem() {
+  }
+
+  // TODO: ลบไอเทมออกจาก state.items
+  function deleteItem() {
+  }
+
+  // TODO: สุ่มผลลัพธ์ 1 ครั้งโดยใช้ Math.random() ตาม state.rates และ state.items
+  function rollOnce() {
+  }
+
+  // TODO: รันการจำลองสุ่มหลายครั้ง แล้วเก็บผลลัพธ์ลง state.simResult และ state.history
+  function runSimulation() {
+  }
+
+  // TODO: รันการจำลองแบบ Monte Carlo จากมุมมองผู้เล่น เก็บผลลัพธ์ลง state.povResult
+  function runMonteCarlo() {
+  }
+
+  // TODO: export ผลการสุ่มเป็น CSV ผ่าน Blob + URL.createObjectURL
+  function exportPullCSV() {
+  }
+
+  // TODO: export ผลลัพธ์ POV เป็น CSV ผ่าน Blob + URL.createObjectURL
+  function exportPOVCSV() {
+  }
+
+  // TODO: render ทุก section ตามค่าปัจจุบันใน state
+  function renderAll() {
+  }
+
+  renderAll();
+</script>
+
+</body>
+</html>

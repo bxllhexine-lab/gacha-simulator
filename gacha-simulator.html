@@ -224,6 +224,94 @@
     font-size: 0.9rem;
     color: var(--text-muted);
   }
+
+  .sim-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+
+  .sim-form input {
+    width: 140px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 1rem;
+  }
+
+  .sim-form button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+    height: 38px;
+  }
+
+  .sim-form button:hover {
+    background: var(--primary-dark);
+  }
+
+  .sim-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .sim-card {
+    flex: 1;
+    min-width: 140px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+
+  .sim-card .label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .sim-card .value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-top: 4px;
+  }
+
+  .sim-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 16px;
+  }
+
+  .sim-table th,
+  .sim-table td {
+    text-align: left;
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+  }
+
+  .sim-items-list {
+    margin-top: 16px;
+  }
+
+  .sim-items-list ul {
+    columns: 2;
+    margin: 8px 0 0 0;
+    padding-left: 20px;
+  }
+
+  .sim-items-list li {
+    font-size: 0.9rem;
+    margin-bottom: 4px;
+  }
 </style>
 </head>
 <body>
@@ -302,7 +390,19 @@
 
   <section id="single-simulation">
     <h2>สุ่มเดี่ยว (Single Simulation)</h2>
-    <div class="placeholder"><!-- TODO: render single simulation UI --></div>
+    <div class="sim-form">
+      <div class="rate-field">
+        <label for="sim-roll-count">จำนวนครั้งที่สุ่ม</label>
+        <input type="number" id="sim-roll-count" min="1" max="10000" step="1" value="100">
+      </div>
+      <div class="rate-field">
+        <label for="sim-price">ราคาต่อครั้ง</label>
+        <input type="number" id="sim-price" min="0" step="0.01" value="100">
+      </div>
+      <button id="run-sim-btn">Start Simulation</button>
+    </div>
+    <div id="sim-form-error" class="form-error"></div>
+    <div id="sim-result"></div>
   </section>
 
   <section id="player-pov">
@@ -516,12 +616,103 @@
     }
   }
 
-  // TODO: สุ่มผลลัพธ์ 1 ครั้งโดยใช้ Math.random() ตาม state.rates และ state.items
+  // สุ่มผลลัพธ์ 1 ครั้ง: เลือก rarity ตาม cumulative rate แล้วเลือก item จาก pool ของ rarity นั้น
   function rollOnce() {
+    const rarityOrder = ["SSR", "SR", "R", "N"];
+    const roll = Math.random();
+
+    let cumulative = 0;
+    let chosenRarity = rarityOrder[rarityOrder.length - 1];
+    for (const rarity of rarityOrder) {
+      cumulative += state.rates[rarity] / 100;
+      if (roll < cumulative) {
+        chosenRarity = rarity;
+        break;
+      }
+    }
+
+    const pool = state.items.filter((item) => item.rarity === chosenRarity);
+    const itemIndex = Math.floor(Math.random() * pool.length);
+    const itemName = pool[itemIndex].name;
+
+    return { rarity: chosenRarity, itemName };
   }
 
-  // TODO: รันการจำลองสุ่มหลายครั้ง แล้วเก็บผลลัพธ์ลง state.simResult และ state.history
-  function runSimulation() {
+  // รันการจำลองสุ่มหลายครั้ง คำนวณสถิติ แล้วเก็บลง state.simResult
+  function runSimulation(rollCount, pricePerRoll) {
+    const errorEl = document.getElementById("sim-form-error");
+    errorEl.textContent = "";
+
+    const ratesCheck = validateRates();
+    if (!ratesCheck.valid) {
+      errorEl.textContent = `ตั้งค่า Rate ไม่ถูกต้อง: ${ratesCheck.message}`;
+      return;
+    }
+
+    const itemsCheck = validateItemPool();
+    if (!itemsCheck.valid) {
+      errorEl.textContent = `Item Pool ไม่ถูกต้อง: ${itemsCheck.message}`;
+      return;
+    }
+
+    if (!Number.isInteger(rollCount) || rollCount <= 0 || rollCount > 10000) {
+      errorEl.textContent = "จำนวนครั้งที่สุ่มต้องเป็นจำนวนเต็มมากกว่า 0 และไม่เกิน 10000";
+      return;
+    }
+
+    if (typeof pricePerRoll !== "number" || isNaN(pricePerRoll) || pricePerRoll < 0) {
+      errorEl.textContent = "ราคาต่อครั้งต้องเป็นตัวเลขที่ไม่ติดลบ";
+      return;
+    }
+
+    const results = [];
+    for (let i = 0; i < rollCount; i++) {
+      results.push(rollOnce());
+    }
+
+    const counts = { SSR: 0, SR: 0, R: 0, N: 0 };
+    const itemCounts = {};
+    results.forEach((result) => {
+      counts[result.rarity]++;
+      const key = `${result.itemName}|${result.rarity}`;
+      itemCounts[key] = (itemCounts[key] || 0) + 1;
+    });
+
+    const actualPercent = {};
+    ["SSR", "SR", "R", "N"].forEach((rarity) => {
+      actualPercent[rarity] = (counts[rarity] / rollCount) * 100;
+    });
+
+    const totalCost = rollCount * pricePerRoll;
+
+    const mostCommonRarity = ["SSR", "SR", "R", "N"].reduce((best, rarity) =>
+      counts[rarity] > counts[best] ? rarity : best
+    );
+
+    const rarityRank = { SSR: 0, SR: 1, R: 2, N: 3 };
+    const itemList = Object.entries(itemCounts)
+      .map(([key, count]) => {
+        const [itemName, rarity] = key.split("|");
+        return { itemName, rarity, count };
+      })
+      .sort((a, b) => {
+        if (rarityRank[a.rarity] !== rarityRank[b.rarity]) {
+          return rarityRank[a.rarity] - rarityRank[b.rarity];
+        }
+        return b.count - a.count;
+      });
+
+    state.simResult = {
+      rollCount,
+      pricePerRoll,
+      totalCost,
+      counts,
+      actualPercent,
+      mostCommonRarity,
+      itemList
+    };
+
+    renderSimResult();
   }
 
   // TODO: รันการจำลองแบบ Monte Carlo จากมุมมองผู้เล่น เก็บผลลัพธ์ลง state.povResult
@@ -536,10 +727,73 @@
   function exportPOVCSV() {
   }
 
+  // render ส่วน single-simulation: cards, ตารางสรุป, รายการ item
+  function renderSimResult() {
+    const container = document.getElementById("sim-result");
+
+    if (!state.simResult) {
+      container.innerHTML = '<div class="placeholder">กรอกจำนวนครั้งและราคา แล้วกด Start Simulation</div>';
+      return;
+    }
+
+    const { rollCount, totalCost, counts, actualPercent, mostCommonRarity, itemList } = state.simResult;
+
+    container.innerHTML = "";
+
+    const cardsDiv = document.createElement("div");
+    cardsDiv.className = "sim-cards";
+    [
+      { label: "Total Rolls", value: rollCount },
+      { label: "Total Cost", value: totalCost.toLocaleString() },
+      { label: "SSR Count", value: counts.SSR },
+      { label: "Most Common Rarity", value: mostCommonRarity }
+    ].forEach(({ label, value }) => {
+      const card = document.createElement("div");
+      card.className = "sim-card";
+      card.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>`;
+      cardsDiv.appendChild(card);
+    });
+    container.appendChild(cardsDiv);
+
+    const table = document.createElement("table");
+    table.className = "sim-table";
+    table.innerHTML = `
+      <thead>
+        <tr><th>Rarity</th><th>Rate ที่ตั้ง</th><th>จำนวนที่ได้</th><th>Actual%</th></tr>
+      </thead>
+    `;
+    const tbody = document.createElement("tbody");
+    ["SSR", "SR", "R", "N"].forEach((rarity) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><span class="rarity-badge ${rarity}">${rarity}</span></td>
+        <td>${state.rates[rarity]}%</td>
+        <td>${counts[rarity]}</td>
+        <td>${actualPercent[rarity].toFixed(2)}%</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    const itemsDiv = document.createElement("div");
+    itemsDiv.className = "sim-items-list";
+    const ul = document.createElement("ul");
+    itemList.forEach(({ itemName, rarity, count }) => {
+      const li = document.createElement("li");
+      li.textContent = `${itemName} x${count} (${rarity})`;
+      ul.appendChild(li);
+    });
+    itemsDiv.innerHTML = "<strong>Item ที่ได้ทั้งหมด:</strong>";
+    itemsDiv.appendChild(ul);
+    container.appendChild(itemsDiv);
+  }
+
   // TODO: render ทุก section ตามค่าปัจจุบันใน state
   function renderAll() {
     renderRateSettings();
     renderItemPool();
+    renderSimResult();
   }
 
   document.querySelectorAll(".rate-input-wrap input").forEach((input) => {
@@ -547,6 +801,12 @@
   });
 
   document.getElementById("add-item-btn").addEventListener("click", addItem);
+
+  document.getElementById("run-sim-btn").addEventListener("click", () => {
+    const rollCount = parseInt(document.getElementById("sim-roll-count").value, 10);
+    const pricePerRoll = parseFloat(document.getElementById("sim-price").value);
+    runSimulation(rollCount, pricePerRoll);
+  });
 
   renderAll();
 </script>

@@ -390,6 +390,101 @@
     background: var(--text-muted);
     cursor: not-allowed;
   }
+
+  .pity-toggle {
+    margin: 12px 0 8px 0;
+    font-size: 0.95rem;
+  }
+
+  .pity-toggle input {
+    margin-right: 6px;
+  }
+
+  #pity-fields {
+    margin-top: 4px;
+  }
+
+  #run-sim-btn:disabled,
+  #run-pov-btn:disabled {
+    background: var(--text-muted);
+    cursor: not-allowed;
+  }
+
+  .pity-status {
+    margin-top: 12px;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+
+  .chart-container {
+    margin-top: 16px;
+  }
+
+  .chart-row {
+    margin-bottom: 12px;
+  }
+
+  .chart-row-label {
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .chart-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .chart-bar-name {
+    width: 56px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .chart-bar-track {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    height: 22px;
+    overflow: hidden;
+  }
+
+  .chart-bar {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 6px;
+    color: #fff;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    box-sizing: border-box;
+    transition: width 0.4s ease;
+    min-width: 2px;
+  }
+
+  .chart-bar.SSR {
+    background: #d4af37;
+  }
+
+  .chart-bar.SR {
+    background: #9333ea;
+  }
+
+  .chart-bar.R {
+    background: #2563eb;
+  }
+
+  .chart-bar.N {
+    background: #6b7280;
+  }
+
+  .chart-bar.actual {
+    opacity: 0.6;
+  }
 </style>
 </head>
 <body>
@@ -433,6 +528,19 @@
       </div>
     </div>
     <div id="rate-total" class="rate-total"></div>
+    <div class="pity-toggle">
+      <label>
+        <input type="checkbox" id="pity-toggle">
+        เปิดระบบ Pity
+      </label>
+    </div>
+    <div id="pity-fields" class="rate-field hidden">
+      <label for="pity-threshold">รับประกัน SSR ทุก [X] rolls</label>
+      <div class="rate-input-wrap">
+        <input type="number" id="pity-threshold" min="1" step="1" value="90">
+        <span class="unit">rolls</span>
+      </div>
+    </div>
   </section>
 
   <section id="item-pool">
@@ -528,7 +636,24 @@
 
   <section id="history">
     <h2>ประวัติการสุ่ม (History)</h2>
-    <div class="placeholder"><!-- TODO: render history UI --></div>
+    <div class="sim-form">
+      <button id="clear-history-btn">ล้างประวัติ</button>
+    </div>
+    <table class="sim-table">
+      <thead>
+        <tr>
+          <th>เวลา</th>
+          <th>จำนวน rolls</th>
+          <th>SSR</th>
+          <th>SR</th>
+          <th>R</th>
+          <th>N</th>
+          <th>ค่าใช้จ่ายรวม</th>
+        </tr>
+      </thead>
+      <tbody id="history-table-body"></tbody>
+    </table>
+    <div id="history-empty" class="placeholder"></div>
   </section>
 </main>
 
@@ -548,7 +673,9 @@
     ],
     simResult: null,
     povResult: null,
-    history: []
+    history: [],
+    pity: { enabled: false, threshold: 90 },
+    pityCurrent: 0
   };
 
   // ตรวจสอบว่าผลรวมของ state.rates เท่ากับ 100 และค่าทุกตัวไม่ติดลบและเป็นตัวเลข
@@ -603,6 +730,8 @@
       const value = state.rates[input.dataset.rarity];
       input.classList.toggle("input-error", typeof value === "number" && value < 0);
     });
+
+    document.getElementById("pity-fields").classList.toggle("hidden", !state.pity.enabled);
   }
 
   // ตรวจสอบว่าทุก rarity ที่มี rate > 0 ต้องมี item อย่างน้อย 1 ชิ้นใน pool
@@ -743,18 +872,32 @@
     }
   }
 
-  // สุ่มผลลัพธ์ 1 ครั้ง: เลือก rarity ตาม cumulative rate แล้วเลือก item จาก pool ของ rarity นั้น
+  // สุ่มผลลัพธ์ 1 ครั้ง: เลือก rarity ตาม cumulative rate (มี pity guarantee) แล้วเลือก item จาก pool ของ rarity นั้น
   function rollOnce() {
     const rarityOrder = ["SSR", "SR", "R", "N"];
-    const roll = Math.random();
+    let chosenRarity;
 
-    let cumulative = 0;
-    let chosenRarity = rarityOrder[rarityOrder.length - 1];
-    for (const rarity of rarityOrder) {
-      cumulative += state.rates[rarity] / 100;
-      if (roll < cumulative) {
-        chosenRarity = rarity;
-        break;
+    if (state.pity.enabled && state.pityCurrent >= state.pity.threshold) {
+      chosenRarity = "SSR";
+      state.pityCurrent = 0;
+    } else {
+      const roll = Math.random();
+      let cumulative = 0;
+      chosenRarity = rarityOrder[rarityOrder.length - 1];
+      for (const rarity of rarityOrder) {
+        cumulative += state.rates[rarity] / 100;
+        if (roll < cumulative) {
+          chosenRarity = rarity;
+          break;
+        }
+      }
+
+      if (state.pity.enabled) {
+        if (chosenRarity === "SSR") {
+          state.pityCurrent = 0;
+        } else {
+          state.pityCurrent++;
+        }
       }
     }
 
@@ -818,6 +961,8 @@
       return;
     }
 
+    state.pityCurrent = 0;
+
     const results = [];
     for (let i = 0; i < rollCount; i++) {
       results.push(rollOnce());
@@ -863,10 +1008,22 @@
       actualPercent,
       mostCommonRarity,
       itemList,
-      results
+      results,
+      pityEnd: state.pityCurrent
     };
 
+    state.history.unshift({
+      time: new Date().toLocaleString("th-TH"),
+      rollCount,
+      counts: { ...counts },
+      totalCost
+    });
+    if (state.history.length > 10) {
+      state.history = state.history.slice(0, 10);
+    }
+
     renderSimResult();
+    renderHistory();
   }
 
   // คำนวณ paidRolls / freeRolls / totalRolls จาก input ปัจจุบันของ player-pov
@@ -965,6 +1122,7 @@
 
     const ssrCounts = [];
     for (let i = 0; i < simCount; i++) {
+      state.pityCurrent = 0;
       let ssr = 0;
       for (let j = 0; j < totalRolls; j++) {
         if (rollOnce().rarity === "SSR") {
@@ -1066,7 +1224,7 @@
       return;
     }
 
-    const { rollCount, totalCost, counts, actualPercent, mostCommonRarity, itemList } = state.simResult;
+    const { rollCount, totalCost, counts, actualPercent, mostCommonRarity, itemList, pityEnd } = state.simResult;
 
     container.innerHTML = "";
 
@@ -1105,6 +1263,55 @@
     });
     table.appendChild(tbody);
     container.appendChild(table);
+
+    if (state.pity.enabled) {
+      const pityDiv = document.createElement("div");
+      pityDiv.className = "pity-status";
+      pityDiv.textContent = `Pity ตอนจบ: ${pityEnd}/${state.pity.threshold}`;
+      container.appendChild(pityDiv);
+    }
+
+    const chartDiv = document.createElement("div");
+    chartDiv.className = "chart-container";
+    ["SSR", "SR", "R", "N"].forEach((rarity) => {
+      const row = document.createElement("div");
+      row.className = "chart-row";
+
+      const label = document.createElement("div");
+      label.className = "chart-row-label";
+      label.innerHTML = `<span class="rarity-badge ${rarity}">${rarity}</span>`;
+      row.appendChild(label);
+
+      const rateValue = state.rates[rarity];
+      const actualValue = actualPercent[rarity];
+
+      [
+        { name: "Rate", value: rateValue, extraClass: "" },
+        { name: "Actual", value: actualValue, extraClass: "actual" }
+      ].forEach(({ name, value, extraClass }) => {
+        const wrap = document.createElement("div");
+        wrap.className = "chart-bar-wrap";
+
+        const nameEl = document.createElement("span");
+        nameEl.className = "chart-bar-name";
+        nameEl.textContent = name;
+
+        const track = document.createElement("div");
+        track.className = "chart-bar-track";
+
+        const bar = document.createElement("div");
+        bar.className = `chart-bar ${rarity} ${extraClass}`.trim();
+        bar.style.width = `${Math.min(value, 100)}%`;
+        bar.textContent = `${value.toFixed(2)}%`;
+
+        track.appendChild(bar);
+        wrap.append(nameEl, track);
+        row.appendChild(wrap);
+      });
+
+      chartDiv.appendChild(row);
+    });
+    container.appendChild(chartDiv);
 
     const itemsDiv = document.createElement("div");
     itemsDiv.className = "sim-items-list";
@@ -1190,13 +1397,48 @@
     container.appendChild(exportBtn);
   }
 
-  // TODO: render ทุก section ตามค่าปัจจุบันใน state
+  // render ส่วน history: ตารางประวัติการสุ่ม 10 รายการล่าสุด
+  function renderHistory() {
+    const tbody = document.getElementById("history-table-body");
+    const emptyEl = document.getElementById("history-empty");
+
+    tbody.innerHTML = "";
+
+    if (state.history.length === 0) {
+      emptyEl.textContent = "ยังไม่มีประวัติการสุ่ม กด Start Simulation เพื่อเริ่มเก็บประวัติ";
+      return;
+    }
+
+    emptyEl.textContent = "";
+    state.history.forEach((entry) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${entry.time}</td>
+        <td>${entry.rollCount}</td>
+        <td>${entry.counts.SSR}</td>
+        <td>${entry.counts.SR}</td>
+        <td>${entry.counts.R}</td>
+        <td>${entry.counts.N}</td>
+        <td>${entry.totalCost.toLocaleString()}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // ล้างประวัติการสุ่มทั้งหมด
+  function clearHistory() {
+    state.history = [];
+    renderHistory();
+  }
+
+  // render ทุก section ตามค่าปัจจุบันใน state
   function renderAll() {
     renderRateSettings();
     renderItemPool();
     renderSimResult();
     renderPovRollsPreview();
     renderPovResult();
+    renderHistory();
   }
 
   document.querySelectorAll(".rate-input-wrap input").forEach((input) => {
@@ -1205,10 +1447,35 @@
 
   document.getElementById("add-item-btn").addEventListener("click", addItem);
 
+  document.getElementById("pity-toggle").addEventListener("change", (event) => {
+    state.pity.enabled = event.target.checked;
+    renderRateSettings();
+  });
+
+  document.getElementById("pity-threshold").addEventListener("input", (event) => {
+    const value = parseInt(event.target.value, 10);
+    state.pity.threshold = isNaN(value) || value < 1 ? 1 : value;
+  });
+
+  document.getElementById("clear-history-btn").addEventListener("click", clearHistory);
+
   document.getElementById("run-sim-btn").addEventListener("click", () => {
-    const rollCount = parseInt(document.getElementById("sim-roll-count").value, 10);
-    const pricePerRoll = parseFloat(document.getElementById("sim-price").value);
-    runSimulation(rollCount, pricePerRoll);
+    const btn = document.getElementById("run-sim-btn");
+    btn.disabled = true;
+    btn.textContent = "กำลังสุ่ม...";
+
+    setTimeout(() => {
+      const rollCount = parseInt(document.getElementById("sim-roll-count").value, 10);
+      const pricePerRoll = parseFloat(document.getElementById("sim-price").value);
+      runSimulation(rollCount, pricePerRoll);
+
+      btn.disabled = false;
+      btn.textContent = "Start Simulation";
+
+      if (state.simResult) {
+        document.getElementById("sim-result").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 50);
   });
 
   document.getElementById("sim-roll-count").addEventListener("input", renderSimInputValidation);
@@ -1235,6 +1502,10 @@
 
       btn.disabled = false;
       btn.textContent = "Run Player POV Simulation";
+
+      if (state.povResult) {
+        document.getElementById("pov-result").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     }, 50);
   });
 
